@@ -1,0 +1,13 @@
+{
+  "enable": true,
+  "realistic_price": false,
+  "hide_no_price_item": false,
+  "custom_price": {
+    "item_id": 222,
+    "item_id2": 333,
+    "item_id3": 444
+  },
+  "hide_all_ammo_ammopacks": false,
+  "hide_all_keys_cards": false,
+  "hide_all_builtin_inserts": true
+}
