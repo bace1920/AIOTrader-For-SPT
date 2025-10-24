@@ -95,7 +95,8 @@ namespace BlueheadsAioTrader
         public ValueTask<string> Handle(string command, UserDialogInfo commandHandler, MongoId sessionId, SendMessageRequest request)
         {
             var splitCommand = request.Text.Split(" ");
-
+            logger.Info(request.Text);
+            logger.Info(splitCommand[2]);
             if (_assortTemplate["aioKeyCase"].Count <= 0)
             {
                 GenerateAssortTemplate();
@@ -104,9 +105,10 @@ namespace BlueheadsAioTrader
             if (command == "give" && new[] { "ammo", "key", "dsp" }.Contains(splitCommand[2]))
             {
 
-                mailSendService.SendUserMessageToPlayer(
+                mailSendService.SendDirectNpcMessageToPlayer(
                     sessionId,
-                    commandHandler,
+                    AIO_TRADER_ID,
+                    MessageType.MessageWithItems,
                     "Here's your item.",
                     _assortTemplate[_assortCommandAlias[splitCommand[2]]],
                     172800L
@@ -122,22 +124,11 @@ namespace BlueheadsAioTrader
             return ValueTask.FromResult(request.DialogId);
         }
 
-
-
-        //public List<Item> GetRewardMessage(ProcessBaseTradeRequestData request)
-        //{
-        //    request.TryGetExtensionData(out var extensionData);
-        //    extensionData.TryGetValue("ItemId", out var itemId);
-
-        //    if ((string)itemId == _assortContainerIds["aioKeyCase"])
-        //    {
-        //        return _assortTemplate["aioKeyCase"];
-        //    } else if ((string)itemId == _assortContainerIds["aioAmmoBox"])
-        //    {
-        //        return _assortTemplate["aioAmmoBox"];
-        //    }
-        //    return _assortTemplate["aioKeyCase"];
-        //}
+        private HashSet<MongoId> GetSecureContainerExcludeIds()
+        {
+            var betaContainer = databaseService.GetItems()["5857a8b324597729ab0a0e7d"];
+            return betaContainer.Properties.Grids.ElementAt(0).Properties.Filters.ElementAt(0).ExcludedFilter;
+        }
 
         protected void GenerateAssortTemplate()
         {
@@ -198,7 +189,7 @@ namespace BlueheadsAioTrader
                 {
                     continue;
                 }
-                else if (new[] { "67ab3d4b83869afd170fdd3f", "64d4b23dc1b37504b41ac2b6" }.Contains(item.Value.Id.ToString())) // some items like Rusted bloody key can not put into secure container so we put it out
+                else if (GetSecureContainerExcludeIds().Contains(item.Value.Id.ToString())) // some items like Rusted bloody key can not put into secure container so we put it out
 
                 {
                     _assortTemplate[assortName].Add(new Item

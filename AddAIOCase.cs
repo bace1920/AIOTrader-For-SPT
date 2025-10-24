@@ -43,6 +43,7 @@ namespace BlueheadsAioTrader
         static public string AIO_ITEM_CASE_ID = "68f98298939080194f06091f";
         static public string AIO_AMMO_BOX_ID = "68f98298939080194f060920";
 
+
         public Task OnLoad()
         {
             //Example of adding new item by cloning an existing item using `createCloneDetails`
@@ -102,6 +103,8 @@ namespace BlueheadsAioTrader
             return Task.CompletedTask;
         }
 
+        
+
         private void ModifyContainerFilter()
         {
             MongoId contrainerParentId = new MongoId("5448bf274bdc2dfc2f8b456a");
@@ -111,7 +114,7 @@ namespace BlueheadsAioTrader
             {
                 if (item.Value.Parent == contrainerParentId.ToString())
                 {
-                    item.Value.Properties.Grids.ElementAt(0).Properties.Filters.ElementAt(0).Filter.Add(contrainerParentId);
+                    item.Value.Properties.Grids.ElementAt(0).Properties.Filters.ElementAt(0).Filter.Add(AIO_INJECTOR_CASE_ID);
                 }
             }
         }
