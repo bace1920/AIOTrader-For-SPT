@@ -23,7 +23,8 @@ using Path = System.IO.Path;
 
 namespace BlueheadsAioTrader
 {
-    [Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 1)]
+    // make it will be the last in PostDBModLoader
+    [Injectable(TypePriority = OnLoadOrder.TraderRegistration + 99999)]
 
 
     public class AddAIOTrader(
@@ -43,6 +44,11 @@ namespace BlueheadsAioTrader
 
         public Task OnLoad()
         {
+            if (readJsonConfig.config.enable_aiotrader == false)
+            {
+                return Task.CompletedTask; 
+            }
+
             // A path to the mods files we use below
             var pathToMod = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
 

@@ -95,21 +95,22 @@ namespace BlueheadsAioTrader
         public ValueTask<string> Handle(string command, UserDialogInfo commandHandler, MongoId sessionId, SendMessageRequest request)
         {
             var splitCommand = request.Text.Split(" ");
-            logger.Info(request.Text);
-            logger.Info(splitCommand[2]);
+            //logger.Info(request.Text);
+            //logger.Info(splitCommand[2]);
             if (_assortTemplate["aioKeyCase"].Count <= 0)
             {
                 GenerateAssortTemplate();
             }
 
-            if (command == "give" && new[] { "ammo", "key", "dsp" }.Contains(splitCommand[2]))
+            if (command == "give" && new[] { "ammo", "key", "dsp", "med" }.Contains(splitCommand[2]))
             {
 
                 mailSendService.SendDirectNpcMessageToPlayer(
                     sessionId,
-                    AIO_TRADER_ID,
+                    //AIO_TRADER_ID,
+                    "579dc571d53a0658a154fbec",
                     MessageType.MessageWithItems,
-                    "Here's your item.",
+                    "I got your package from Bluehead, how do you know this guy?",
                     _assortTemplate[_assortCommandAlias[splitCommand[2]]],
                     172800L
                     );
@@ -136,30 +137,22 @@ namespace BlueheadsAioTrader
             Dictionary<string, List<List<object>>> barterScheme = new();
             Dictionary<string, int> loyaltyLevel = new();
 
-            _assortTemplate["aioKeyCase"].Add(new Item
-            {
-                Id = _assortContainerIds["aioKeyCase"],
-                Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
-                ParentId= "5fe49444ae6628187a2e78b8",
-                SlotId = "hideout",
-                Upd=new Upd
+            // default all to aiocase
+            foreach (var item in _assortContainerIds) {
+                _assortTemplate[item.Key].Add(new Item
                 {
-                    StackObjectsCount=1
-                }
-            });
+                    Id = _assortContainerIds[item.Key],
+                    Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
+                    ParentId = "5fe49444ae6628187a2e78b8",
+                    SlotId = "hideout",
+                    Upd = new Upd
+                    {
+                        StackObjectsCount = 1
+                    }
+                });
+            }
 
-            _assortTemplate["aioAmmoBox"].Add(new Item
-            {
-                Id = _assortContainerIds["aioAmmoBox"],
-                Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
-                ParentId = "5fe49444ae6628187a2e78b8",
-                SlotId = "hideout",
-                Upd = new Upd
-                {
-                    StackObjectsCount = 1
-                }
-            });
-
+            // overwritten
             _assortTemplate["dspTransmitter"].Add(new Item
             {
                 Id = _assortContainerIds["dspTransmitter"],
@@ -176,6 +169,7 @@ namespace BlueheadsAioTrader
 
             AddAllItemsToAssortTemplateByParentId("aioKeyCase", ["5c99f98d86f7745c314214b3", "5c164d2286f774194c5e69fa"], 1);
             AddAllItemsToAssortTemplateByParentId("aioAmmoBox", ["5485a8684bdc2da71d8b4567"], 999999);
+            AddAllItemsToAssortTemplateByParentId("aioMedCase", ["5448f3a64bdc2d60728b456a", "5448f3a14bdc2d27728b4569", "5448f39d4bdc2d0a728b4568"], 10);
 
         }
 

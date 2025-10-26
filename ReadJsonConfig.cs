@@ -36,6 +36,11 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
 
         config = _modHelper.GetJsonDataFromFile<ModConfig>(pathToMod, "data/config.json");
 
+        if (config.enable_aiotrader == true)
+        {
+            _logger.Info($"[Bluehead's AioTrader]Config: enable_aiotrader enabled");
+        }
+
         if (config.realistic_price == true)
         {
             _logger.Info($"[Bluehead's AioTrader]Config: realistic_price enabled");
@@ -67,7 +72,9 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
 
 public class ModConfig
 {
-    public bool enable { get; set; }
+    public bool enable_aiotrader { get; set; }
+
+    public bool enable_commando_command { get; set; }
 
     public bool realistic_price { get; set; }
 

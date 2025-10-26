@@ -1,5 +1,5 @@
 {
-  "enable": true,
+  "enable_aiotrader": true,
   "realistic_price": false,
   "hide_no_price_item": false,
   "custom_price": {
