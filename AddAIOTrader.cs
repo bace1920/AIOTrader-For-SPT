@@ -58,9 +58,9 @@ namespace BlueheadsAioTrader
                 "data/aiotrader.png",
                 "data/assort_aio_trader.json",
                 "AioTrader",
-                "This is the AioTrader."
+                "This is the AioTrader.",
+                readJsonConfig.config.should_aio_trader_assort_on_flea_market
                 );
-
 
             return Task.CompletedTask;
         }
@@ -150,6 +150,7 @@ namespace BlueheadsAioTrader
             }
             return false;
         }
+
         public double GetPrice(TemplateItem item)
         {
             double price;
@@ -157,14 +158,14 @@ namespace BlueheadsAioTrader
             
             if (readJsonConfig.config.custom_price.TryGetValue(item.Id, out price))
             {
-                return price;
+                return price * readJsonConfig.config.price_modifier;
             }
             if (readJsonConfig.config.realistic_price == true && prices.TryGetValue(item.Id, out price))
             {
-                return price;
+                return price * readJsonConfig.config.price_modifier;
             }
 
-            return 1;
+            return 1 * readJsonConfig.config.price_modifier;
         }
     }
 

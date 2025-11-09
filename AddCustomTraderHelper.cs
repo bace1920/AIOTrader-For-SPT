@@ -10,6 +10,7 @@ using SPTarkov.Server.Core.Servers;
 using SPTarkov.Server.Core.Services;
 using SPTarkov.Server.Core.Utils;
 using SPTarkov.Server.Core.Utils.Cloners;
+using System.Collections.Generic;
 using System.Reflection;
 using Path = System.IO.Path;
 
@@ -135,14 +136,18 @@ namespace BlueheadsAioTrader
             traderToEdit.Assort = newAssorts;
         }
 
-        public void RegisterCustomTrader(string traderBasePath, string avatarPath, string assortPath, string firstName, string description)
+        public void RegisterCustomTrader(string traderBasePath, string avatarPath, string assortPath, string firstName, string description, bool shouldAssortOnFleaMarket=true)
         {
             var pathToMod = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
             var traderImagePath = Path.Combine(pathToMod, avatarPath);
             var traderBase = modHelper.GetJsonDataFromFile<TraderBase>(pathToMod, traderBasePath);
             imageRouter.AddRoute(traderBase.Avatar.Replace(".jpg", ""), traderImagePath);
             SetTraderUpdateTime(_traderConfig, traderBase, timeUtil.GetHoursAsSeconds(1), timeUtil.GetHoursAsSeconds(2));
-            _ragfairConfig.Traders.TryAdd(traderBase.Id, true);
+
+            if (shouldAssortOnFleaMarket == true)
+            {
+                _ragfairConfig.Traders.TryAdd(traderBase.Id, shouldAssortOnFleaMarket);
+            }
 
             AddTraderWithEmptyAssortToDb(traderBase);
             AddTraderToLocales(traderBase, firstName, description);

@@ -65,6 +65,12 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
         {
             _logger.Info($"[Bluehead's AioTrader]Config: hide_all_builtin_inserts enabled");
         }
+
+        if (config.should_aio_trader_assort_on_flea_market == false)
+        {
+            _logger.Info($"[Bluehead's AioTrader]Config: should_aio_trader_assort_on_flea_market false");
+        }
+
         // Return a completed task
         return Task.CompletedTask;
     }
@@ -78,6 +84,10 @@ public class ModConfig
 
     public bool realistic_price { get; set; }
 
+    public double price_modifier { get; set; }
+
+    public bool should_aio_trader_assort_on_flea_market { get; set; }
+    
     public Dictionary<string, double> custom_price { get; set; }
 
     public bool hide_no_price_item { get; set; }

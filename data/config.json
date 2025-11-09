@@ -2,6 +2,8 @@
   "enable_aiotrader": true,
   "realistic_price": false,
   "hide_no_price_item": false,
+  "price_modifier": 1.0,
+  "should_aio_trader_assort_on_flea_market": true,
   "custom_price": {
     "item_id": 222,
     "item_id2": 333,
