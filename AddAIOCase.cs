@@ -98,7 +98,7 @@ namespace BlueheadsAioTrader
 
             var createItemResult = customItemService.CreateItemFromClone(exampleCloneItem); // Send our data to the function that creates our item
                                                                                             //logger.Info(createItemResult.ToString());
-            ModifyContainerFilter();
+            //ModifyContainerFilter();
 
             return Task.CompletedTask;
         }
