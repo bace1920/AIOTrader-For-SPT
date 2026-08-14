@@ -49,7 +49,7 @@
         "category": [],
         "id_list": []
     },
-    "customization_seller": true,
+    "customization_seller": false,
     "name": "AIOTrader",
     "surname": "AIOTrader",
     "nickname": "AIOTrader",

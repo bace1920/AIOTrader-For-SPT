@@ -1,12 +1,6 @@
-﻿using Microsoft.AspNetCore.Razor.TagHelpers;
-using SPTarkov.Common.Extensions;
+﻿using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
-using SPTarkov.Server.Core.Constants;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Helpers;
-using SPTarkov.Server.Core.Helpers.Dialog.Commando;
-using SPTarkov.Server.Core.Helpers.Dialog.Commando.SptCommands;
-using SPTarkov.Server.Core.Helpers.Dialogue;
 using SPTarkov.Server.Core.Helpers.Dialogue.Commando;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
@@ -14,47 +8,29 @@ using SPTarkov.Server.Core.Models.Eft.Dialog;
 using SPTarkov.Server.Core.Models.Eft.Profile;
 using SPTarkov.Server.Core.Models.Eft.Trade;
 using SPTarkov.Server.Core.Models.Enums;
-using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Spt.Mod;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Routers;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
-using SPTarkov.Server.Core.Utils;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
-using System.Security.Cryptography;
-using System.Security.Principal;
-using System.Text.Json;
-using Path = System.IO.Path;
+using SPTarkov.Server.Core.Models.Spt.Tables;
+using SPTarkov.Server.Core.Services.Commerce;
 
 namespace BlueheadsAioTrader
 {
-    /// <summary>
-    /// We inject this class into 'AddTraderWithDynamicAssorts' to help us with adding the new trader into the server
-    /// </summary>
-    [Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 2)]
+    [Injectable(InjectionType.Singleton, TypePriority = OnLoadOrder.GameCallbacks + 2)]
     public class AIOTraderCommando(
-        ModHelper modHelper,
-        ImageRouter imageRouter,
-        ConfigServer configServer,
-        TimeUtil timeUtil,
-        ISptLogger<AIOTraderCommando> logger, // We are injecting a logger similar to example 1, but notice the class inside <> is different
-        DatabaseService databaseService,
-        FluentTraderAssortCreator fluentAssortCreator,
-        AddCustomTraderHelper addCustomTraderHelper, // This is a custom class we add for this mod, we made it injectable so it can be accessed like other classes here
+        ISptLogger<AIOTraderCommando> logger,
+        TemplateTable templateTable,
+        ReadJsonConfig readJsonConfig,
         MailSendService mailSendService
-    ) : ICommandoCommand
+    ) : ICommandoCommand, IOnLoad
     {
-        public static string AIO_TRADER_ID = "68f98298939080194f060927";
-
-        private readonly TraderConfig _traderConfig = configServer.GetConfig<TraderConfig>();
-        private readonly RagfairConfig _ragfairConfig = configServer.GetConfig<RagfairConfig>();
+        private const string AIO_TRADER_ID = "68f98298939080194f060927";
 
         public string CommandPrefix { get { return "aio"; } }
         public List<string> Commands => ["give"];
+
+        public Task OnLoadAsync(CancellationToken cancellationToken = default)
+        {
+            logger.Info("[Bluehead's AioTrader] AIOTraderCommando loaded — prefix: 'aio', commands: give");
+            return Task.CompletedTask;
+        }
 
         private Dictionary<string, string> _assortCommandAlias { get; set; } = new()
         {
@@ -84,38 +60,39 @@ namespace BlueheadsAioTrader
         public string GetCommandHelp(string command)
         {
             if (command == "give")
-            {
                 return "Usage: give [name]\n    key for aio key case\n    ammo for aio ammo box\n    dsp for encoded DSP Transmitter";
-            }
-
             return null;
         }
 
 
         public ValueTask<string> Handle(string command, UserDialogInfo commandHandler, MongoId sessionId, SendMessageRequest request)
         {
-            var splitCommand = request.Text.Split(" ");
-            //logger.Info(request.Text);
-            //logger.Info(splitCommand[2]);
-            if (_assortTemplate["aioKeyCase"].Count <= 0)
+            if (!readJsonConfig.config.enable_commando_command)
+                return ValueTask.FromResult(request.DialogId);
+
+            var splitCommand = request.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var aliasArg = splitCommand.FirstOrDefault(p => _assortCommandAlias.ContainsKey(p));
+
+            if (aliasArg == null)
             {
-                GenerateAssortTemplate();
+                mailSendService.SendUserMessageToPlayer(sessionId, commandHandler, GetCommandHelp(command));
+                return ValueTask.FromResult(request.DialogId);
             }
 
-            if (command == "give" && new[] { "ammo", "key", "dsp", "med" }.Contains(splitCommand[2]))
-            {
+            if (_assortTemplate["aioKeyCase"].Count <= 0)
+                GenerateAssortTemplate();
 
+            if (command == "give")
+            {
                 mailSendService.SendDirectNpcMessageToPlayer(
                     sessionId,
-                    //AIO_TRADER_ID,
                     "579dc571d53a0658a154fbec",
                     MessageType.MessageWithItems,
                     "I got your package from Bluehead, how do you know this guy?",
-                    _assortTemplate[_assortCommandAlias[splitCommand[2]]],
+                    _assortTemplate[_assortCommandAlias[aliasArg]],
                     172800L
-                    );
-                logger.Info($"[Bluehead's AioTrader]Total {_assortTemplate[_assortCommandAlias[splitCommand[2]]].Count} item sended.");
-
+                );
+                logger.Info($"[Bluehead's AioTrader]Total {_assortTemplate[_assortCommandAlias[aliasArg]].Count} item sended.");
             }
             else
             {
@@ -127,43 +104,36 @@ namespace BlueheadsAioTrader
 
         private HashSet<MongoId> GetSecureContainerExcludeIds()
         {
-            var betaContainer = databaseService.GetItems()["5857a8b324597729ab0a0e7d"];
+            var betaContainer = templateTable.Items["5857a8b324597729ab0a0e7d"];
             return betaContainer.Properties.Grids.ElementAt(0).Properties.Filters.ElementAt(0).ExcludedFilter;
         }
 
         protected void GenerateAssortTemplate()
         {
-            List<Dictionary<string, object>> itemsToSell = new();
-            Dictionary<string, List<List<object>>> barterScheme = new();
-            Dictionary<string, int> loyaltyLevel = new();
-
-            // default all to aiocase
-            foreach (var item in _assortContainerIds) {
-                _assortTemplate[item.Key].Add(new Item
+            // default key/ammo/med templates: root is the AIO injector case container
+            foreach (var key in _assortContainerIds.Keys.Where(k => k != "dspTransmitter"))
+            {
+                _assortTemplate[key].Add(new Item
                 {
-                    Id = _assortContainerIds[item.Key],
+                    Id = _assortContainerIds[key],
                     Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
                     ParentId = "5fe49444ae6628187a2e78b8",
                     SlotId = "hideout",
-                    Upd = new Upd
-                    {
-                        StackObjectsCount = 1
-                    }
+                    Upd = new Upd { StackObjectsCount = 1 }
                 });
             }
 
-            // overwritten
+            // dspTransmitter is a standalone item, not inside a container
             _assortTemplate["dspTransmitter"].Add(new Item
             {
                 Id = _assortContainerIds["dspTransmitter"],
                 Template = ItemTpl.RADIOTRANSMITTER_DIGITAL_SECURE_DSP_RADIO_TRANSMITTER,
                 ParentId = "5fe49444ae6628187a2e78b8",
                 SlotId = "hideout",
-                Upd = new Upd {
+                Upd = new Upd
+                {
                     StackObjectsCount = 1,
-                    RecodableComponent = new UpdRecodableComponent {
-                        IsEncoded = true
-                    }
+                    RecodableComponent = new UpdRecodableComponent { IsEncoded = true }
                 }
             });
 
@@ -175,7 +145,7 @@ namespace BlueheadsAioTrader
 
         protected int AddAllItemsToAssortTemplateByParentId(string assortName, List<string> parentIds, int count)
         {
-            var items = databaseService.GetItems();
+            var items = templateTable.Items;
             int itemCount = 0;
             foreach (var item in items)
             {

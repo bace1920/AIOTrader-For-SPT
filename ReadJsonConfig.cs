@@ -1,15 +1,14 @@
-﻿using SPTarkov.DI.Annotations;
+﻿using SPTarkov.Common.Models.Logging;
+using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Spt.Mod;
-
-using SPTarkov.Server.Core.Models.Utils;
 using System.Reflection;
 
 namespace BlueheadsAioTrader;
 
-// We want to load after PreSptModLoader is complete, so we set our type priority to that, plus 1.
-[Injectable(InjectionType.Singleton, TypePriority = OnLoadOrder.PreSptModLoader + 1)]
+// We want to load after Preload is complete, so we set our type priority to that, plus 1.
+[Injectable(InjectionType.Singleton, TypePriority = OnLoadOrder.Preload + 1)]
 public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that this mod can do something
 {
     private readonly ISptLogger<ReadJsonConfig> _logger;
@@ -30,7 +29,7 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
     /// on the [Injectable] attribute on this class. Each class can then be used as an entry point to do
     /// things at varying times according to type priority
     /// </summary>
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken = default)
     {
         var pathToMod = _modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
 
@@ -80,7 +79,7 @@ public class ModConfig
 {
     public bool enable_aiotrader { get; set; }
 
-    public bool enable_commando_command { get; set; }
+    public bool enable_commando_command { get; set; } = true;
 
     public bool realistic_price { get; set; }
 

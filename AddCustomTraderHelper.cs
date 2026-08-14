@@ -1,13 +1,12 @@
-﻿using SPTarkov.DI.Annotations;
+﻿using SPTarkov.Common.Models.Logging;
+using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Utils;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Routers;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
 using SPTarkov.Server.Core.Utils;
 using SPTarkov.Server.Core.Utils.Cloners;
 using System.Collections.Generic;
@@ -16,22 +15,19 @@ using Path = System.IO.Path;
 
 namespace BlueheadsAioTrader
 {
-    /// <summary>
-    /// We inject this class into 'AddTraderWithDynamicAssorts' to help us with adding the new trader into the server
-    /// </summary>
-    [Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 1)]
+    [Injectable(TypePriority = OnLoadOrder.GameCallbacks + 1)]
     public class AddCustomTraderHelper(
         ModHelper modHelper,
         TimeUtil timeUtil,
         ImageRouter imageRouter,
         ISptLogger<AddCustomTraderHelper> logger,
         ICloner cloner,
-        DatabaseService databaseService,
-        LocaleService localeService,
-        ConfigServer configServer)
+        TemplateTable templateTable,
+        TradersTable tradersTable,
+        LocaleTable localeTable,
+        TraderConfig traderConfig,
+        RagfairConfig ragfairConfig)
     {
-        private readonly TraderConfig _traderConfig = configServer.GetConfig<TraderConfig>();
-        private readonly RagfairConfig _ragfairConfig = configServer.GetConfig<RagfairConfig>();
         /// <summary>
         /// Add the traders update time for when their offers refresh
         /// </summary>
@@ -81,7 +77,7 @@ namespace BlueheadsAioTrader
             };
 
             // Add the new trader id and data to the server
-            if (!databaseService.GetTables().Traders.TryAdd(traderDetailsToAdd.Id, traderDataToAdd))
+            if (!tradersTable.TryAdd(traderDetailsToAdd.Id, traderDataToAdd))
             {
                 //Failed to add trader!
             }
@@ -96,7 +92,7 @@ namespace BlueheadsAioTrader
         public void AddTraderToLocales(TraderBase baseJson, string firstName, string description)
         {
             // For each language, add locale for the new trader
-            var locales = databaseService.GetTables().Locales.Global;
+            var locales = localeTable.Global;
             var newTraderId = baseJson.Id;
             var fullName = baseJson.Name;
             var nickName = baseJson.Nickname;
@@ -125,7 +121,7 @@ namespace BlueheadsAioTrader
         /// <param name="newAssorts">new assorts we want to add</param>
         public void OverwriteTraderAssort(string traderId, TraderAssort newAssorts)
         {
-            if (!databaseService.GetTables().Traders.TryGetValue(traderId, out var traderToEdit))
+            if (!tradersTable.TryGetValue(traderId, out var traderToEdit))
             {
                 logger.Warning($"Unable to update assorts for trader: {traderId}, they couldn't be found on the server");
 
@@ -142,11 +138,11 @@ namespace BlueheadsAioTrader
             var traderImagePath = Path.Combine(pathToMod, avatarPath);
             var traderBase = modHelper.GetJsonDataFromFile<TraderBase>(pathToMod, traderBasePath);
             imageRouter.AddRoute(traderBase.Avatar.Replace(".jpg", ""), traderImagePath);
-            SetTraderUpdateTime(_traderConfig, traderBase, timeUtil.GetHoursAsSeconds(1), timeUtil.GetHoursAsSeconds(2));
+            SetTraderUpdateTime(traderConfig, traderBase, timeUtil.GetHoursAsSeconds(1), timeUtil.GetHoursAsSeconds(2));
 
             if (shouldAssortOnFleaMarket == true)
             {
-                _ragfairConfig.Traders.TryAdd(traderBase.Id, shouldAssortOnFleaMarket);
+                ragfairConfig.Traders.TryAdd(traderBase.Id, shouldAssortOnFleaMarket);
             }
 
             AddTraderWithEmptyAssortToDb(traderBase);

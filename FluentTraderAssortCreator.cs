@@ -1,27 +1,17 @@
-﻿using SPTarkov.DI.Annotations;
+﻿using SPTarkov.Common.Models.Logging;
+using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Constants;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Services;
-using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace BlueheadsAioTrader;
 
-/// <summary>
-/// We inject this class into 'AddTraderWithDynamicAssorts' to help us add items to the trader to sell
-/// </summary>
-[Injectable(InjectionType.Scoped, TypePriority = OnLoadOrder.PostDBModLoader + 1)]
-public class FluentTraderAssortCreator(
-    DatabaseService databaseService,
-    ISptLogger<FluentTraderAssortCreator> logger)
+[Injectable(InjectionType.Singleton, TypePriority = OnLoadOrder.GameCallbacks + 1)]
+public class FluentTraderAssortCreator(ISptLogger<FluentTraderAssortCreator> logger)
 {
-    private readonly Dictionary<string, object> assort = new();
     private readonly List<Dictionary<string, object>> itemsToSell = new();
     private readonly Dictionary<string, List<List<object>>> barterScheme = new();
     private readonly Dictionary<string, int> loyaltyLevel = new();
@@ -42,7 +32,6 @@ public class FluentTraderAssortCreator(
         {
             tempUpd.TryAdd("UnlimitedCount", true);
             tempUpd.TryAdd("StackObjectsCount", 999999);
-            tempUpd.TryAdd("BuyRestrictionCurrent", 0);
         }
         
         tempItem.TryAdd("_id", tempId.ToString());
@@ -89,18 +78,20 @@ public class FluentTraderAssortCreator(
         itemsToSell.Clear();
         barterScheme.Clear();
         loyaltyLevel.Clear();
-
         return this;
     }
 
     public FluentTraderAssortCreator? Dump(string path)
     {
-        assort.TryAdd("items", itemsToSell);
-        assort.TryAdd("barter_scheme", barterScheme);
-        assort.TryAdd("loyal_level_items", loyaltyLevel);
-        assort.TryAdd("nextResupply", 3600);
+        var output = new Dictionary<string, object>
+        {
+            ["items"] = itemsToSell,
+            ["barter_scheme"] = barterScheme,
+            ["loyal_level_items"] = loyaltyLevel,
+            ["nextResupply"] = 3600
+        };
 
-        string json = JsonSerializer.Serialize(assort);
+        string json = JsonSerializer.Serialize(output);
         File.WriteAllText(path, json);
         return this;
     }

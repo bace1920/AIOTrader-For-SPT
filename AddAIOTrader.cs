@@ -1,48 +1,31 @@
-﻿using SPTarkov.Common.Extensions;
+﻿using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Constants;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Enums;
-using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Spt.Mod;
-using SPTarkov.Server.Core.Models.Utils;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Routers;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
-using SPTarkov.Server.Core.Utils;
-using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
-using System.Security.Principal;
-using System.Text.Json;
 using Path = System.IO.Path;
 
 namespace BlueheadsAioTrader
 {
-    // make it will be the last in PostDBModLoader
     [Injectable(TypePriority = OnLoadOrder.TraderRegistration + 99999)]
-
-
     public class AddAIOTrader(
         ModHelper modHelper,
         ImageRouter imageRouter,
-        ConfigServer configServer,
-        TimeUtil timeUtil,
-        ISptLogger<Mod> logger, // We are injecting a logger similar to example 1, but notice the class inside <> is different
-        DatabaseService databaseService,
+        ISptLogger<AddAIOTrader> logger,
+        TemplateTable templateTable,
         FluentTraderAssortCreator fluentAssortCreator,
-        AddCustomTraderHelper addCustomTraderHelper, // This is a custom class we add for this mod, we made it injectable so it can be accessed like other classes here
+        AddCustomTraderHelper addCustomTraderHelper,
         ReadJsonConfig readJsonConfig
     ) : IOnLoad
     {
-        private readonly TraderConfig _traderConfig = configServer.GetConfig<TraderConfig>();
-        private readonly RagfairConfig _ragfairConfig = configServer.GetConfig<RagfairConfig>();
-
-        public Task OnLoad()
+        public Task OnLoadAsync(CancellationToken cancellationToken = default)
         {
             if (readJsonConfig.config.enable_aiotrader == false)
             {
@@ -68,7 +51,7 @@ namespace BlueheadsAioTrader
         private void GenerateAssorts(string dumpPath)
         {
             var count = 0;
-            var items = databaseService.GetItems();
+            var items = templateTable.Items;
 
             foreach (var item in items)
             {
@@ -89,19 +72,21 @@ namespace BlueheadsAioTrader
 
         private void InsertLockedPlate(MongoId uuid, TemplateItem item)
         {
+            if (item.Properties?.Slots == null) return;
             foreach (var slot in item.Properties.Slots)
             {
-                if (slot.Properties.Filters.ElementAt(0).Locked == true)
-                {
-                    fluentAssortCreator.AddSlotItem(uuid, slot.Properties.Filters.ElementAt(0).Plate, slot.Name);
-                }
+                var filter = slot.Properties?.Filters?.FirstOrDefault();
+                if (filter?.Locked == true && filter.Plate != null)
+                    fluentAssortCreator.AddSlotItem(uuid, filter.Plate, slot.Name);
             }
         }
 
         private void InsertAmmoPack(MongoId uuid, TemplateItem item)
         {
-            var ammoId = item.Properties.StackSlots.ElementAt(0).Properties.Filters.ElementAt(0).Filter.ElementAt(0);
-            var stackCount = item.Properties.StackSlots.ElementAt(0).MaxCount;
+            var stackSlot = item.Properties?.StackSlots?.FirstOrDefault();
+            var ammoId = stackSlot?.Properties?.Filters?.FirstOrDefault()?.Filter?.FirstOrDefault();
+            if (ammoId == null) return;
+            var stackCount = stackSlot!.MaxCount;
             fluentAssortCreator.AddSlotItem(uuid, ammoId, "cartridges", stackCount);
         }
 
@@ -129,32 +114,32 @@ namespace BlueheadsAioTrader
         private bool ShouldBehidden(TemplateItem item)
         {
             if (item.Type != "Item")
-            {
                 return true;
-            }
-            //logger.Info(item.Type.GetType().ToString());
-            if (readJsonConfig.config.hide_all_ammo_ammopacks == true &&
+
+            if (readJsonConfig.config.hide_all_ammo_ammopacks &&
                 ammo_ammopacks_parent_ids.Contains(item.Parent.ToString()))
-            {
                 return true;
-            }
-            else if (readJsonConfig.config.hide_all_keys_cards == true &&
+
+            if (readJsonConfig.config.hide_all_keys_cards &&
                 keys_cards_parent_ids.Contains(item.Parent.ToString()))
-            {
                 return true;
-            }
-            else if (readJsonConfig.config.hide_all_builtin_inserts == true &&
+
+            if (readJsonConfig.config.hide_all_builtin_inserts &&
                 builtin_inserts_plates_parent_ids.Contains(item.Parent.ToString()))
-            {
                 return true;
-            }
+
+            if (readJsonConfig.config.hide_no_price_item &&
+                !readJsonConfig.config.custom_price.ContainsKey(item.Id) &&
+                !templateTable.Prices.ContainsKey(item.Id))
+                return true;
+
             return false;
         }
 
         public double GetPrice(TemplateItem item)
         {
             double price;
-            var prices = databaseService.GetPrices();
+            var prices = templateTable.Prices;
             
             if (readJsonConfig.config.custom_price.TryGetValue(item.Id, out price))
             {

@@ -1,5 +1,6 @@
 {
   "enable_aiotrader": true,
+  "enable_commando_command": true,
   "realistic_price": false,
   "hide_no_price_item": false,
   "price_modifier": 1.0,
