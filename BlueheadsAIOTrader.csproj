@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <OutputType>Library</OutputType>
-    <Version>5.3.0</Version>
+    <Version>5.3.1</Version>
     <!-- The two lines below will set the output path for the binaries -->
     <OutputPath>..\BlueheadsAIOTrader\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -24,6 +24,26 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
+  <Target Name="KillServer" BeforeTargets="Build">
+    <Exec Command="taskkill /F /IM SPT.Server.exe 2&gt;nul; ping -n 2 127.0.0.1 &gt;nul" IgnoreExitCode="true" />
+    <Message Text="[AIOTrader] SPT.Server stopped." Importance="High" />
+  </Target>
+
+  <Target Name="PackageRelease" AfterTargets="Build">
+    <PropertyGroup>
+      <_ModFolder>$(MSBuildProjectDirectory)\..\BlueheadsAIOTrader</_ModFolder>
+      <_ZipDest>E:\gamelib\others\TarkovMultiVersion\bluehead-AIOTrader $(Version).zip</_ZipDest>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -Command &quot;Compress-Archive -Force -Path '$(_ModFolder)' -DestinationPath '$(_ZipDest)'&quot;" />
+    <Message Text="[AIOTrader] Packaged: $(_ZipDest)" Importance="High" />
+  </Target>
+
+  <Target Name="StartServer" AfterTargets="PackageRelease">
+    <PropertyGroup>
+      <_ServerExe>E:\gamelib\others\TarkovMultiVersion\SPT-4.1\SPT_Runtime\SPT.Server.exe</_ServerExe>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -Command &quot;Start-Process '$(_ServerExe)'&quot;" />
+    <Message Text="[AIOTrader] SPT.Server started." Importance="High" />
+  </Target>
+
 </Project>
