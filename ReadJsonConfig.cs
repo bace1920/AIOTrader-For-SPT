@@ -15,7 +15,7 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
     private readonly ISptLogger<ReadJsonConfig> _logger;
     private readonly ModHelper _modHelper;
 
-    public ModConfig config;
+    public ModConfig config = new();
 
     public ReadJsonConfig(
         ISptLogger<ReadJsonConfig> logger,
@@ -34,7 +34,9 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
     {
         var pathToMod = _modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
 
-        config = _modHelper.GetJsonDataFromFile<ModConfig>(pathToMod, "data/config.json");
+        config = _modHelper.GetJsonDataFromFile<ModConfig>(pathToMod, "data/config.json")
+            ?? throw new InvalidDataException("data/config.json must contain a configuration object.");
+        config.Validate();
 
         if (config.enable_aiotrader == true)
         {
@@ -78,17 +80,17 @@ public class ReadJsonConfig : IOnLoad // Implement the IOnLoad interface so that
 
 public class ModConfig
 {
-    public bool enable_aiotrader { get; set; }
+    public bool enable_aiotrader { get; set; } = true;
 
     public bool enable_commando_command { get; set; } = true;
 
     public bool realistic_price { get; set; }
 
-    public double price_modifier { get; set; }
+    public double price_modifier { get; set; } = 1;
 
-    public bool should_aio_trader_assort_on_flea_market { get; set; }
+    public bool should_aio_trader_assort_on_flea_market { get; set; } = true;
     
-    public Dictionary<string, double> custom_price { get; set; }
+    public Dictionary<string, double> custom_price { get; set; } = new();
 
     public bool hide_no_price_item { get; set; }
 
@@ -96,5 +98,18 @@ public class ModConfig
 
     public bool hide_all_keys_cards { get; set; }
 
-    public bool hide_all_builtin_inserts { get; set; }
+    public bool hide_all_builtin_inserts { get; set; } = true;
+
+    public void Validate()
+    {
+        custom_price ??= new();
+        if (!double.IsFinite(price_modifier) || price_modifier <= 0)
+            throw new InvalidDataException("data/config.json: price_modifier must be finite and greater than 0.");
+
+        foreach (var (id, price) in custom_price)
+        {
+            if (!double.IsFinite(price) || price <= 0 || !double.IsFinite(price * price_modifier))
+                throw new InvalidDataException($"data/config.json: custom_price[{id}] must be finite, greater than 0, and remain finite after applying price_modifier.");
+        }
+    }
 }

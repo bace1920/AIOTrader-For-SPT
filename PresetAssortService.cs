@@ -15,7 +15,9 @@ public class PresetAssortService(
     ISptLogger<PresetAssortService> logger,
     DatabaseService databaseService,
     PresetHelper presetHelper,
-    ICloner cloner
+    ICloner cloner,
+    ReadJsonConfig readJsonConfig,
+    AddAIOTrader addAIOTrader
 ) : IOnLoad
 {
     private const string AioTraderId = "68f98298939080194f060927";
@@ -34,7 +36,18 @@ public class PresetAssortService(
         {
             if (preset.Items == null || preset.Items.Count == 0)
                 continue;
-            AddItemListToAssort(assort, preset.Items);
+            if (readJsonConfig.config.hide_no_price_item &&
+                preset.Items.Any(item => !addAIOTrader.HasReferencePrice(item.Template)))
+                continue;
+            var price = readJsonConfig.config.realistic_price
+                ? preset.Items.Sum(item => addAIOTrader.GetPrice(item.Template) * (item.Upd?.StackObjectsCount ?? 1))
+                : readJsonConfig.config.price_modifier;
+            if (!double.IsFinite(price) || price <= 0)
+            {
+                logger.Warning("[AIOTrader] Skipping preset with invalid total price.");
+                continue;
+            }
+            AddItemListToAssort(assort, preset.Items, price);
         }
 
         trader.Assort = assort;
@@ -42,7 +55,7 @@ public class PresetAssortService(
         return Task.CompletedTask;
     }
 
-    private static void AddItemListToAssort(TraderAssort assort, List<Item> items)
+    private static void AddItemListToAssort(TraderAssort assort, List<Item> items, double price)
     {
         var allIds = new HashSet<string>(items.Select(i => i.Id.ToString()));
         var rootItem = items.FirstOrDefault(i => i.ParentId == null || !allIds.Contains(i.ParentId));
@@ -80,7 +93,7 @@ public class PresetAssortService(
             });
         }
 
-        assort.BarterScheme[listingId] = [[new BarterScheme { Count = 1, Template = Money.ROUBLES }]];
+        assort.BarterScheme[listingId] = [[new BarterScheme { Count = price, Template = Money.ROUBLES }]];
         assort.LoyalLevelItems[listingId] = 1;
     }
 }

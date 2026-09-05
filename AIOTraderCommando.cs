@@ -260,36 +260,55 @@ namespace BlueheadsAioTrader
             }
         }
 
+        internal static IEnumerable<int> SplitStacks(int count, int? databaseLimit)
+        {
+            var limit = Math.Max(1, databaseLimit ?? 1);
+            while (count > 0)
+            {
+                var quantity = Math.Min(count, limit);
+                yield return quantity;
+                count -= quantity;
+            }
+        }
+
         protected int AddAllItemsToAssortTemplateByParentId(string assortName, List<string> parentIds, int count)
         {
             var items = databaseService.GetItems();
+            var excludedIds = GetSecureContainerExcludeIds();
+            var containers = new List<MongoId> { _assortContainerIds[assortName] };
             int itemCount = 0;
             foreach (var item in items)
             {
-                if (!parentIds.Contains(item.Value.Parent.ToString()))
+                if (item.Value.Type != "Item" || !parentIds.Contains(item.Value.Parent.ToString()))
                     continue;
 
-                if (GetSecureContainerExcludeIds().Contains(item.Value.Id.ToString()))
+                var excluded = excludedIds.Contains(item.Value.Id);
+                var stackIndex = 0;
+                foreach (var quantity in SplitStacks(count, item.Value.Properties?.StackMaxSize))
                 {
+                    // Put additional stacks in separate cases instead of overfilling the original.
+                    if (!excluded && stackIndex >= containers.Count)
+                    {
+                        var containerId = new MongoId();
+                        containers.Add(containerId);
+                        _assortTemplate[assortName].Add(new Item
+                        {
+                            Id = containerId,
+                            Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
+                            ParentId = "5fe49444ae6628187a2e78b8",
+                            SlotId = "hideout",
+                            Upd = new Upd { StackObjectsCount = 1 }
+                        });
+                    }
                     _assortTemplate[assortName].Add(new Item
                     {
                         Id = new MongoId(),
                         Template = item.Value.Id,
-                        ParentId = "hideout",
-                        SlotId = "hideout",
-                        Upd = new Upd { StackObjectsCount = count }
+                        ParentId = excluded ? "5fe49444ae6628187a2e78b8" : containers[stackIndex].ToString(),
+                        SlotId = excluded ? "hideout" : "main",
+                        Upd = new Upd { StackObjectsCount = quantity }
                     });
-                }
-                else
-                {
-                    _assortTemplate[assortName].Add(new Item
-                    {
-                        Id = new MongoId(),
-                        Template = item.Value.Id,
-                        ParentId = _assortContainerIds[assortName],
-                        SlotId = "main",
-                        Upd = new Upd { StackObjectsCount = count }
-                    });
+                    stackIndex++;
                 }
                 itemCount++;
             }
