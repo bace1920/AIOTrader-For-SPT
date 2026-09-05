@@ -29,7 +29,7 @@ using Path = System.IO.Path;
 
 namespace BlueheadsAioTrader
 {
-    [Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 2)]
+    [Injectable(InjectionType.Singleton, TypePriority = OnLoadOrder.PostDBModLoader + 2)]
     public class AIOTraderCommando(
         ModHelper modHelper,
         ImageRouter imageRouter,
@@ -93,13 +93,19 @@ namespace BlueheadsAioTrader
             if (!readJsonConfig.config.enable_commando_command)
                 return ValueTask.FromResult(request.DialogId);
 
-            var splitCommand = request.Text.Split(" ");
+            var splitCommand = request.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            var aliasArg = splitCommand.Length > 2 ? splitCommand[2] : null;
+            if (aliasArg == null || !new[] { "ammo", "key", "dsp", "med" }.Contains(aliasArg))
+            {
+                mailSendService.SendUserMessageToPlayer(sessionId, commandHandler, GetCommandHelp(command));
+                return ValueTask.FromResult(request.DialogId);
+            }
 
             if (_assortTemplate["aioKeyCase"].Count <= 0)
                 GenerateAssortTemplate();
 
-            var aliasArg = splitCommand.Length > 2 ? splitCommand[2] : null;
-            if (command == "give" && aliasArg != null && new[] { "ammo", "key", "dsp", "med" }.Contains(aliasArg))
+            if (command == "give")
             {
                 List<Item> items;
                 if (aliasArg == "ammo")

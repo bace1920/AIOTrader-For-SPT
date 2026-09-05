@@ -80,7 +80,7 @@ public class ModConfig
 {
     public bool enable_aiotrader { get; set; }
 
-    public bool enable_commando_command { get; set; }
+    public bool enable_commando_command { get; set; } = true;
 
     public bool realistic_price { get; set; }
 
