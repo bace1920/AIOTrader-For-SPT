@@ -1,4 +1,3 @@
-﻿using Microsoft.AspNetCore.Razor.TagHelpers;
 using SPTarkov.Common.Extensions;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Constants;
@@ -25,33 +24,35 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Security.Principal;
 using System.Text.Json;
 using Path = System.IO.Path;
 
 namespace BlueheadsAioTrader
 {
-    /// <summary>
-    /// We inject this class into 'AddTraderWithDynamicAssorts' to help us with adding the new trader into the server
-    /// </summary>
     [Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 2)]
     public class AIOTraderCommando(
         ModHelper modHelper,
         ImageRouter imageRouter,
         ConfigServer configServer,
         TimeUtil timeUtil,
-        ISptLogger<AIOTraderCommando> logger, // We are injecting a logger similar to example 1, but notice the class inside <> is different
+        ISptLogger<AIOTraderCommando> logger,
         DatabaseService databaseService,
         FluentTraderAssortCreator fluentAssortCreator,
-        AddCustomTraderHelper addCustomTraderHelper, // This is a custom class we add for this mod, we made it injectable so it can be accessed like other classes here
-        MailSendService mailSendService
+        AddCustomTraderHelper addCustomTraderHelper,
+        MailSendService mailSendService,
+        ReadJsonConfig readJsonConfig
     ) : ICommandoCommand
     {
         public static string AIO_TRADER_ID = "68f98298939080194f060927";
 
         private readonly TraderConfig _traderConfig = configServer.GetConfig<TraderConfig>();
         private readonly RagfairConfig _ragfairConfig = configServer.GetConfig<RagfairConfig>();
+
+        private const int DEFAULT_AMMO_STACKS = 10;
+        private const int MAX_AMMO_STACKS = 100;
+
+        // grenade-launcher calibers: StackMaxSize=1, cannot stack, excluded from aioAmmoBox
+        private static readonly HashSet<string> GrenadeCalibres = ["Caliber40mmRU", "Caliber40x46", "Caliber30x29"];
 
         public string CommandPrefix { get { return "aio"; } }
         public List<string> Commands => ["give"];
@@ -64,10 +65,9 @@ namespace BlueheadsAioTrader
             ["med"] = "aioMedCase",
         };
 
-        private Dictionary<string, MongoId>  _assortContainerIds { get; set; } = new()
+        private Dictionary<string, MongoId> _assortContainerIds { get; set; } = new()
         {
             ["aioKeyCase"] = new MongoId(),
-            ["aioAmmoBox"] = new MongoId(),
             ["dspTransmitter"] = new MongoId(),
             ["aioMedCase"] = new MongoId(),
         };
@@ -76,53 +76,117 @@ namespace BlueheadsAioTrader
         {
             ["aioKeyCase"] = new List<Item>(),
             ["aioAmmoBox"] = new List<Item>(),
+            ["aioNadeBox"] = new List<Item>(),
             ["dspTransmitter"] = new List<Item>(),
             ["aioMedCase"] = new List<Item>(),
         };
-        
 
         public string GetCommandHelp(string command)
         {
             if (command == "give")
-            {
-                return "Usage: give [name]\n    key for aio key case\n    ammo for aio ammo box\n    dsp for encoded DSP Transmitter";
-            }
-
+                return "Usage: give [name] [count]\n    key          — aio key case\n    ammo [n]     — ammo box (n sub-boxes each with all ammo types at stack limit, default 10, max 100)\n    dsp          — encoded DSP Transmitter\n    med          — aio med case";
             return null;
         }
 
-
         public ValueTask<string> Handle(string command, UserDialogInfo commandHandler, MongoId sessionId, SendMessageRequest request)
         {
-            var splitCommand = request.Text.Split(" ");
-            //logger.Info(request.Text);
-            //logger.Info(splitCommand[2]);
-            if (_assortTemplate["aioKeyCase"].Count <= 0)
-            {
-                GenerateAssortTemplate();
-            }
+            if (!readJsonConfig.config.enable_commando_command)
+                return ValueTask.FromResult(request.DialogId);
 
-            if (command == "give" && new[] { "ammo", "key", "dsp", "med" }.Contains(splitCommand[2]))
+            var splitCommand = request.Text.Split(" ");
+
+            if (_assortTemplate["aioKeyCase"].Count <= 0)
+                GenerateAssortTemplate();
+
+            var aliasArg = splitCommand.Length > 2 ? splitCommand[2] : null;
+            if (command == "give" && aliasArg != null && new[] { "ammo", "key", "dsp", "med" }.Contains(aliasArg))
             {
+                List<Item> items;
+                if (aliasArg == "ammo")
+                {
+                    var stacksArg = splitCommand.FirstOrDefault(p => int.TryParse(p, out _));
+                    var copies = stacksArg != null ? Math.Clamp(int.Parse(stacksArg), 1, MAX_AMMO_STACKS) : DEFAULT_AMMO_STACKS;
+                    items = BuildAmmoItems(_assortTemplate["aioAmmoBox"], _assortTemplate["aioNadeBox"], copies);
+                }
+                else
+                {
+                    items = _assortTemplate[_assortCommandAlias[aliasArg]];
+                }
 
                 mailSendService.SendDirectNpcMessageToPlayer(
                     sessionId,
-                    //AIO_TRADER_ID,
                     "579dc571d53a0658a154fbec",
                     MessageType.MessageWithItems,
                     "I got your package from Bluehead, how do you know this guy?",
-                    _assortTemplate[_assortCommandAlias[splitCommand[2]]],
+                    items,
                     172800L
-                    );
-                logger.Info($"[Bluehead's AioTrader]Total {_assortTemplate[_assortCommandAlias[splitCommand[2]]].Count} item sended.");
-
+                );
+                logger.Info($"[Bluehead's AioTrader] Sent {items.Count} items (command: {aliasArg}).");
             }
             else
             {
-                mailSendService.SendUserMessageToPlayer(sessionId, commandHandler, $"Illegal command: {command}");
+                mailSendService.SendUserMessageToPlayer(sessionId, commandHandler, GetCommandHelp(command));
             }
 
             return ValueTask.FromResult(request.DialogId);
+        }
+
+        // ammoEntries: one item per stackable ammo type (StackMaxSize qty cached)
+        // nadeEntries: one item per grenade-launcher round (qty 1)
+        // copies: how many sub-boxes to create; each sub-box contains every ammo type once at StackMaxSize
+        private static List<Item> BuildAmmoItems(List<Item> ammoEntries, List<Item> nadeEntries, int copies)
+        {
+            var outerId = new MongoId();
+            var result = new List<Item>
+            {
+                new()
+                {
+                    Id = outerId,
+                    Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
+                    ParentId = "5fe49444ae6628187a2e78b8",
+                    SlotId = "hideout",
+                    Upd = new Upd { StackObjectsCount = 1 }
+                }
+            };
+
+            for (int i = 0; i < copies; i++)
+            {
+                var subId = new MongoId();
+                result.Add(new Item
+                {
+                    Id = subId,
+                    Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
+                    ParentId = outerId,
+                    SlotId = "main",
+                    Upd = new Upd { StackObjectsCount = 1 }
+                });
+                foreach (var src in ammoEntries)
+                {
+                    result.Add(new Item
+                    {
+                        Id = new MongoId(),
+                        Template = src.Template,
+                        ParentId = subId,
+                        SlotId = "main",
+                        Upd = new Upd { StackObjectsCount = src.Upd?.StackObjectsCount ?? 1 }
+                    });
+                }
+            }
+
+            // grenade rounds loose in outer box, 1 each
+            foreach (var src in nadeEntries)
+            {
+                result.Add(new Item
+                {
+                    Id = new MongoId(),
+                    Template = src.Template,
+                    ParentId = outerId,
+                    SlotId = "main",
+                    Upd = new Upd { StackObjectsCount = 1 }
+                });
+            }
+
+            return result;
         }
 
         private HashSet<MongoId> GetSecureContainerExcludeIds()
@@ -133,44 +197,61 @@ namespace BlueheadsAioTrader
 
         protected void GenerateAssortTemplate()
         {
-            List<Dictionary<string, object>> itemsToSell = new();
-            Dictionary<string, List<List<object>>> barterScheme = new();
-            Dictionary<string, int> loyaltyLevel = new();
-
-            // default all to aiocase
-            foreach (var item in _assortContainerIds) {
+            foreach (var item in _assortContainerIds)
+            {
                 _assortTemplate[item.Key].Add(new Item
                 {
                     Id = _assortContainerIds[item.Key],
                     Template = AddAIOCase.AIO_INJECTOR_CASE_ID,
                     ParentId = "5fe49444ae6628187a2e78b8",
                     SlotId = "hideout",
-                    Upd = new Upd
-                    {
-                        StackObjectsCount = 1
-                    }
+                    Upd = new Upd { StackObjectsCount = 1 }
                 });
             }
 
-            // overwritten
+            // dspTransmitter overwrites the default container entry
+            _assortTemplate["dspTransmitter"].Clear();
             _assortTemplate["dspTransmitter"].Add(new Item
             {
                 Id = _assortContainerIds["dspTransmitter"],
                 Template = ItemTpl.RADIOTRANSMITTER_DIGITAL_SECURE_DSP_RADIO_TRANSMITTER,
                 ParentId = "5fe49444ae6628187a2e78b8",
                 SlotId = "hideout",
-                Upd = new Upd {
+                Upd = new Upd
+                {
                     StackObjectsCount = 1,
-                    RecodableComponent = new UpdRecodableComponent {
-                        IsEncoded = true
-                    }
+                    RecodableComponent = new UpdRecodableComponent { IsEncoded = true }
                 }
             });
 
             AddAllItemsToAssortTemplateByParentId("aioKeyCase", ["5c99f98d86f7745c314214b3", "5c164d2286f774194c5e69fa"], 1);
-            AddAllItemsToAssortTemplateByParentId("aioAmmoBox", ["5485a8684bdc2da71d8b4567"], 999999);
+            CacheAmmoEntries("aioAmmoBox", "aioNadeBox");
             AddAllItemsToAssortTemplateByParentId("aioMedCase", ["5448f3a64bdc2d60728b456a", "5448f3a14bdc2d27728b4569", "5448f39d4bdc2d0a728b4568"], 10);
+        }
 
+        // Populates ammoKey (one entry per stackable ammo, StackMaxSize qty)
+        // and nadeKey (one entry per grenade-launcher round, qty 1)
+        protected void CacheAmmoEntries(string ammoKey, string nadeKey)
+        {
+            var ammoParent = "5485a8684bdc2da71d8b4567";
+            foreach (var item in databaseService.GetItems())
+            {
+                if (item.Value.Parent.ToString() != ammoParent)
+                    continue;
+
+                bool isGren = GrenadeCalibres.Contains(item.Value.Properties?.Caliber ?? "");
+                var qty = isGren ? 1 : (item.Value.Properties?.StackMaxSize ?? 1);
+                var key = isGren ? nadeKey : ammoKey;
+
+                _assortTemplate[key].Add(new Item
+                {
+                    Id = new MongoId(),
+                    Template = item.Value.Id,
+                    ParentId = "placeholder",
+                    SlotId = "main",
+                    Upd = new Upd { StackObjectsCount = qty }
+                });
+            }
         }
 
         protected int AddAllItemsToAssortTemplateByParentId(string assortName, List<string> parentIds, int count)
@@ -180,11 +261,9 @@ namespace BlueheadsAioTrader
             foreach (var item in items)
             {
                 if (!parentIds.Contains(item.Value.Parent.ToString()))
-                {
                     continue;
-                }
-                else if (GetSecureContainerExcludeIds().Contains(item.Value.Id.ToString())) // some items like Rusted bloody key can not put into secure container so we put it out
 
+                if (GetSecureContainerExcludeIds().Contains(item.Value.Id.ToString()))
                 {
                     _assortTemplate[assortName].Add(new Item
                     {
@@ -192,10 +271,7 @@ namespace BlueheadsAioTrader
                         Template = item.Value.Id,
                         ParentId = "hideout",
                         SlotId = "hideout",
-                        Upd = new Upd
-                        {
-                            StackObjectsCount = count
-                        }
+                        Upd = new Upd { StackObjectsCount = count }
                     });
                 }
                 else
@@ -206,10 +282,7 @@ namespace BlueheadsAioTrader
                         Template = item.Value.Id,
                         ParentId = _assortContainerIds[assortName],
                         SlotId = "main",
-                        Upd=new Upd
-                        {
-                            StackObjectsCount=count
-                        }
+                        Upd = new Upd { StackObjectsCount = count }
                     });
                 }
                 itemCount++;
